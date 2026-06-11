@@ -16,6 +16,13 @@ public interface TagMapper {
     @Select("SELECT * FROM t_tag WHERE id IN (SELECT tag_id FROM t_post_tag WHERE post_id = #{postId})")
     List<Tag> findByPostId(Long postId);
 
+    @Select("<script>" +
+            "SELECT t.*, pt.post_id AS post_id FROM t_tag t " +
+            "INNER JOIN t_post_tag pt ON t.id = pt.tag_id " +
+            "WHERE pt.post_id IN <foreach collection='postIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach>" +
+            "</script>")
+    List<Tag> findByPostIds(@Param("postIds") List<Long> postIds);
+
     @Insert("INSERT INTO t_tag (name, slug, created_at) VALUES (#{name}, #{slug}, NOW())")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(Tag tag);

@@ -21,13 +21,14 @@ import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
-
-import static cn.dev33.satoken.secure.SaSecureUtil.md5;
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +37,11 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final CaptchaService captchaService;
     private final OssUtil ossUtil;
+
+    private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
+    private static final Set<String> AVATAR_ALLOWED_EXTENSIONS = Set.of(".jpg", ".jpeg", ".png", ".gif", ".webp");
+    private static final long MAX_AVATAR_SIZE = 5 * 1024 * 1024;
+    private static final int MAX_PAGE_SIZE = 100;
 
     @Override
     public LoginVO register(RegisterDTO dto) {
@@ -46,9 +52,12 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(ResultCode.USER_ALREADY_EXISTS);
         }
 
+        // 校验验证码
+        captchaService.verifyCaptcha(dto.getCaptchaKey(), dto.getCaptchaCode());
+
         User user = new User();
         user.setUsername(dto.getUsername());
-        user.setPassword(md5(dto.getPassword()));
+        user.setPassword(PASSWORD_ENCODER.encode(dto.getPassword()));
         user.setNickname(dto.getNickname() != null ? dto.getNickname() : dto.getUsername());
         user.setEmail(dto.getEmail());
         user.setRole("ROLE_USER");
@@ -75,8 +84,7 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(403, "账号已被禁用");
         }
 
-        String encryptedPassword = md5(dto.getPassword());
-        if (!encryptedPassword.equals(user.getPassword())) {
+        if (!PASSWORD_ENCODER.matches(dto.getPassword(), user.getPassword())) {
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
 
@@ -94,6 +102,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public UserVO getProfile(Long userId) {
         User user = userMapper.findById(userId);
         if (user == null) {
@@ -103,6 +112,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public UserVO updateProfile(Long userId, UserUpdateDTO dto) {
         User user = userMapper.findById(userId);
         if (user == null) {
@@ -119,16 +129,25 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public String uploadAvatar(Long userId, MultipartFile file) {
         if (userMapper.findById(userId) == null) {
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
-        // 校验文件类型和大小
+        // 校验文件类型：Content-Type + 扩展名白名单
         String contentType = file.getContentType();
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new BusinessException("仅支持上传图片文件");
         }
-        if (file.getSize() > 5 * 1024 * 1024) {
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename != null) {
+            String lowerName = originalFilename.toLowerCase();
+            boolean allowed = AVATAR_ALLOWED_EXTENSIONS.stream().anyMatch(lowerName::endsWith);
+            if (!allowed) {
+                throw new BusinessException("仅支持 jpg/jpeg/png/gif/webp 格式的图片");
+            }
+        }
+        if (file.getSize() > MAX_AVATAR_SIZE) {
             throw new BusinessException("头像图片大小不能超过 5MB");
         }
         // 上传到 OSS
@@ -142,23 +161,23 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void changePassword(Long userId, ChangePasswordDTO dto) {
         User user = userMapper.findById(userId);
         if (user == null) {
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
         // 校验旧密码
-        String oldEncrypted = md5(dto.getOldPassword());
-        if (!oldEncrypted.equals(user.getPassword())) {
+        if (!PASSWORD_ENCODER.matches(dto.getOldPassword(), user.getPassword())) {
             throw new BusinessException(ResultCode.OLD_PASSWORD_ERROR);
         }
         // 更新新密码
-        String newEncrypted = md5(dto.getNewPassword());
-        user.setPassword(newEncrypted);
+        user.setPassword(PASSWORD_ENCODER.encode(dto.getNewPassword()));
         userMapper.updatePassword(user);
     }
 
     @Override
+    @Transactional
     public void forgotPassword(ForgotPasswordDTO dto) {
         // 先验证邮箱是否存在
         User user = userMapper.findByEmail(dto.getEmail());
@@ -168,8 +187,7 @@ public class UserServiceImpl implements UserService {
         // 业务校验通过后，最后校验验证码（一次性消耗）
         captchaService.verifyCaptcha(dto.getCaptchaKey(), dto.getCaptchaCode());
         // 更新密码
-        String newEncrypted = md5(dto.getNewPassword());
-        user.setPassword(newEncrypted);
+        user.setPassword(PASSWORD_ENCODER.encode(dto.getNewPassword()));
         userMapper.updatePassword(user);
     }
 
@@ -181,7 +199,9 @@ public class UserServiceImpl implements UserService {
     // ========== Admin ==========
 
     @Override
+    @Transactional(readOnly = true)
     public PageResult<AdminUserVO> listUsers(int pageNum, int pageSize, String keyword, String role, Integer status) {
+        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
         PageHelper.startPage(pageNum, pageSize);
         List<User> users = userMapper.findAll(keyword, role, status);
         PageInfo<User> pageInfo = new PageInfo<>(users);
@@ -190,6 +210,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void updateUserStatus(Long userId, Integer status) {
         User user = userMapper.findById(userId);
         if (user == null) {
@@ -199,6 +220,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void updateUserRole(Long userId, String role) {
         User user = userMapper.findById(userId);
         if (user == null) {

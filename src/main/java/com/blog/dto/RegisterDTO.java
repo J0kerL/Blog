@@ -31,4 +31,12 @@ public class RegisterDTO {
     @Email(message = "邮箱格式不正确")
     @Schema(description = "邮箱", example = "zhangsan@example.com")
     private String email;
+
+    @NotBlank(message = "验证码 key 不能为空")
+    @Schema(description = "验证码 key", example = "a1b2c3d4")
+    private String captchaKey;
+
+    @NotBlank(message = "验证码不能为空")
+    @Schema(description = "验证码", example = "Xk3m")
+    private String captchaCode;
 }

@@ -15,4 +15,11 @@ public interface PostCategoryMapper {
 
     @Select("SELECT c.* FROM t_category c INNER JOIN t_post_category pc ON c.id = pc.category_id WHERE pc.post_id = #{postId}")
     List<Category> findCategoriesByPostId(Long postId);
+
+    @Select("<script>" +
+            "SELECT c.*, pc.post_id AS post_id FROM t_category c " +
+            "INNER JOIN t_post_category pc ON c.id = pc.category_id " +
+            "WHERE pc.post_id IN <foreach collection='postIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach>" +
+            "</script>")
+    List<Category> findCategoriesByPostIds(@Param("postIds") List<Long> postIds);
 }

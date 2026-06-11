@@ -1,5 +1,6 @@
 package com.blog.controller.front;
 
+import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.stp.StpUtil;
 import com.blog.common.Result;
 import com.blog.dto.CommentCreateDTO;
@@ -25,7 +26,7 @@ public class CommentController {
         Long userId = null;
         try {
             userId = StpUtil.getLoginIdAsLong();
-        } catch (Exception ignored) {
+        } catch (NotLoginException ignored) {
             // 未登录用户也可以评论
         }
         return Result.ok(commentService.create(userId, dto));

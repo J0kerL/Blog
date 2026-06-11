@@ -5,11 +5,12 @@ import com.blog.common.ResultCode;
 import com.blog.dto.TagDTO;
 import com.blog.entity.Tag;
 import com.blog.mapper.TagMapper;
+import com.blog.mapper.convert.EntityConverter;
 import com.blog.service.TagService;
 import com.blog.vo.TagVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -19,35 +20,42 @@ import java.util.stream.Collectors;
 public class TagServiceImpl implements TagService {
 
     private final TagMapper tagMapper;
+    private final EntityConverter entityConverter;
 
     @Override
+    @Transactional(readOnly = true)
     public List<TagVO> listAll() {
-        return tagMapper.findAll().stream().map(this::toVO).collect(Collectors.toList());
+        return tagMapper.findAll().stream().map(this::toVOWithPostCount).collect(Collectors.toList());
     }
 
     @Override
+    @Transactional
     public TagVO create(TagDTO dto) {
         Tag tag = new Tag();
-        BeanUtils.copyProperties(dto, tag);
+        tag.setName(dto.getName());
+        tag.setSlug(dto.getSlug());
         tagMapper.insert(tag);
-        return toVO(tag);
+        return entityConverter.toTagVO(tag);
     }
 
     @Override
+    @Transactional
     public TagVO update(Long id, TagDTO dto) {
         if (tagMapper.findById(id) == null) {
             throw new BusinessException(ResultCode.TAG_NOT_FOUND);
         }
-        // 动态更新：仅 DTO 中非 null 的字段会被写入数据库
         Tag updateParam = new Tag();
         updateParam.setId(id);
         updateParam.setName(dto.getName());
         updateParam.setSlug(dto.getSlug());
         tagMapper.updateSelective(updateParam);
-        return toVO(tagMapper.findById(id));
+
+        Tag updated = tagMapper.findById(id);
+        return entityConverter.toTagVO(updated);
     }
 
     @Override
+    @Transactional
     public void delete(Long id) {
         if (tagMapper.findById(id) == null) {
             throw new BusinessException(ResultCode.TAG_NOT_FOUND);
@@ -55,9 +63,8 @@ public class TagServiceImpl implements TagService {
         tagMapper.deleteById(id);
     }
 
-    private TagVO toVO(Tag tag) {
-        TagVO vo = new TagVO();
-        BeanUtils.copyProperties(tag, vo);
+    private TagVO toVOWithPostCount(Tag tag) {
+        TagVO vo = entityConverter.toTagVO(tag);
         vo.setPostCount(tagMapper.countPostsByTagId(tag.getId()));
         return vo;
     }

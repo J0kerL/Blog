@@ -59,7 +59,7 @@
 
     <!-- 前台文章列表：已发布 + 动态过滤 -->
     <select id="findPublishedList" resultMap="postResultMap">
-        SELECT DISTINCT p.* FROM t_post p
+        SELECT DISTINCT p.id, p.user_id, p.title, p.slug, p.summary, p.cover_image, p.status, p.is_top, p.allow_comment, p.view_count, p.published_at, p.created_at, p.updated_at FROM t_post p
         <if test="categoryId != null">
             INNER JOIN t_post_category pc ON p.id = pc.post_id AND pc.category_id = #{categoryId}
         </if>
@@ -75,7 +75,7 @@
 
     <!-- Admin 文章列表 -->
     <select id="findAdminList" resultMap="postResultMap">
-        SELECT DISTINCT p.* FROM t_post p
+        SELECT DISTINCT p.id, p.user_id, p.title, p.slug, p.summary, p.cover_image, p.status, p.is_top, p.allow_comment, p.view_count, p.published_at, p.created_at, p.updated_at FROM t_post p
         <if test="categoryId != null">
             INNER JOIN t_post_category pc ON p.id = pc.post_id AND pc.category_id = #{categoryId}
         </if>

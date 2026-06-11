@@ -27,12 +27,18 @@
     </select>
 
     <select id="findTopLevelByPostId" resultMap="commentResultMap">
-        SELECT * FROM t_comment WHERE post_id = #{postId} AND parent_id IS NULL AND status = 1
+        SELECT id, post_id, parent_id, user_id, nickname, content, status, created_at FROM t_comment WHERE post_id = #{postId} AND parent_id IS NULL AND status = 1
         ORDER BY created_at DESC
     </select>
 
     <select id="findRepliesByParentId" resultMap="commentResultMap">
-        SELECT * FROM t_comment WHERE parent_id = #{parentId} AND status = 1
+        SELECT id, post_id, parent_id, user_id, nickname, content, status, created_at FROM t_comment WHERE parent_id = #{parentId} AND status = 1
+        ORDER BY created_at ASC
+    </select>
+
+    <!-- 查询某篇文章下所有已通过的回复（批量组装用） -->
+    <select id="findRepliesByPostId" resultMap="commentResultMap">
+        SELECT id, post_id, parent_id, user_id, nickname, content, status, created_at FROM t_comment WHERE post_id = #{postId} AND parent_id IS NOT NULL AND status = 1
         ORDER BY created_at ASC
     </select>
 
@@ -51,7 +57,7 @@
 
     <!-- Admin 评论列表 -->
     <select id="findAdminList" resultMap="commentResultMap">
-        SELECT * FROM t_comment
+        SELECT id, post_id, parent_id, user_id, nickname, content, status, created_at FROM t_comment
         WHERE 1=1
         <if test="postId != null">
             AND post_id = #{postId}

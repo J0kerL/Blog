@@ -10,6 +10,9 @@ public interface UserMapper {
     @Select("SELECT * FROM t_user WHERE id = #{id}")
     User findById(Long id);
 
+    @Select("<script>SELECT * FROM t_user WHERE id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
+    List<User> findByIds(@Param("ids") List<Long> ids);
+
     @Select("SELECT * FROM t_user WHERE username = #{username}")
     User findByUsername(String username);
 

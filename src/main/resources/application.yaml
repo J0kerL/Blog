@@ -52,7 +52,7 @@ sa-token:
   token-name: Authorization
   token-prefix: Bearer
   timeout: 86400           # token 有效期（秒）24小时
-  active-timeout: -1       # 无操作超时（-1 不超时）
+  active-timeout: 7200     # 无操作超时 2 小时
   is-concurrent: true      # 是否允许同一账号并发登录
   is-share: true           # 多端登录共享同一 token
   token-style: uuid
@@ -75,3 +75,8 @@ knife4j:
   enable: true
   setting:
     language: zh_cn
+
+# ==================== 日志格式（含 TraceId） ====================
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
