@@ -26,8 +26,9 @@ public class AdminCommentController {
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize,
             @RequestParam(required = false) Long postId,
-            @RequestParam(required = false) Integer status) {
-        return Result.ok(commentService.listAdmin(pageNum, pageSize, postId, status));
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String keyword) {
+        return Result.ok(commentService.listAdmin(pageNum, pageSize, postId, status, keyword));
     }
 
     @Operation(summary = "审核通过")
@@ -41,6 +42,13 @@ public class AdminCommentController {
     @PutMapping("/{id}/reject")
     public Result<Void> reject(@PathVariable Long id) {
         commentService.reject(id);
+        return Result.ok();
+    }
+
+    @Operation(summary = "AI 审核评论")
+    @PutMapping("/{id}/ai-review")
+    public Result<Void> aiReview(@PathVariable Long id) {
+        commentService.aiReview(id);
         return Result.ok();
     }
 

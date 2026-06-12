@@ -23,6 +23,17 @@ public interface TagMapper {
             "</script>")
     List<Tag> findByPostIds(@Param("postIds") List<Long> postIds);
 
+    @Select("<script>" +
+            "SELECT * FROM t_tag " +
+            "<where>" +
+            "<if test=\"keyword != null and keyword != ''\">" +
+            "AND name LIKE CONCAT('%', #{keyword}, '%') " +
+            "</if>" +
+            "</where>" +
+            "ORDER BY id ASC" +
+            "</script>")
+    List<Tag> search(@Param("keyword") String keyword);
+
     @Insert("INSERT INTO t_tag (name, slug, created_at) VALUES (#{name}, #{slug}, NOW())")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(Tag tag);

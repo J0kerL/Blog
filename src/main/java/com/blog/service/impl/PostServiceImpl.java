@@ -9,7 +9,7 @@ import com.blog.entity.Post;
 import com.blog.entity.Tag;
 import com.blog.entity.User;
 import com.blog.mapper.*;
-import com.blog.mapper.convert.EntityConverter;
+import com.blog.converter.EntityConverter;
 import com.blog.service.PostService;
 import com.blog.util.SlugUtil;
 import com.blog.vo.*;

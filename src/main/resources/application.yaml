@@ -75,8 +75,3 @@ knife4j:
   enable: true
   setting:
     language: zh_cn
-
-# ==================== 日志格式（含 TraceId） ====================
-logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"

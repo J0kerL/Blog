@@ -5,8 +5,9 @@ import com.blog.common.ResultCode;
 import com.blog.dto.TagDTO;
 import com.blog.entity.Tag;
 import com.blog.mapper.TagMapper;
-import com.blog.mapper.convert.EntityConverter;
+import com.blog.converter.EntityConverter;
 import com.blog.service.TagService;
+import com.blog.util.SlugUtil;
 import com.blog.vo.TagVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,11 +30,20 @@ public class TagServiceImpl implements TagService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<TagVO> search(String keyword) {
+        return tagMapper.search(keyword).stream().map(this::toVOWithPostCount).collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     public TagVO create(TagDTO dto) {
         Tag tag = new Tag();
         tag.setName(dto.getName());
-        tag.setSlug(dto.getSlug());
+        String slug = (dto.getSlug() != null && !dto.getSlug().isBlank())
+                ? dto.getSlug()
+                : SlugUtil.generateSlug(dto.getName());
+        tag.setSlug(slug);
         tagMapper.insert(tag);
         return entityConverter.toTagVO(tag);
     }
@@ -47,7 +57,9 @@ public class TagServiceImpl implements TagService {
         Tag updateParam = new Tag();
         updateParam.setId(id);
         updateParam.setName(dto.getName());
-        updateParam.setSlug(dto.getSlug());
+        if (dto.getSlug() != null && !dto.getSlug().isBlank()) {
+            updateParam.setSlug(dto.getSlug());
+        }
         tagMapper.updateSelective(updateParam);
 
         Tag updated = tagMapper.findById(id);
@@ -59,6 +71,9 @@ public class TagServiceImpl implements TagService {
     public void delete(Long id) {
         if (tagMapper.findById(id) == null) {
             throw new BusinessException(ResultCode.TAG_NOT_FOUND);
+        }
+        if (tagMapper.countPostsByTagId(id) > 0) {
+            throw new BusinessException("该标签下仍有文章，无法删除");
         }
         tagMapper.deleteById(id);
     }

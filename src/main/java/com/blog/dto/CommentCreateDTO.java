@@ -19,9 +19,6 @@ public class CommentCreateDTO {
     @Schema(description = "游客昵称（已登录用户可留空）", example = "访客A")
     private String nickname;
 
-    @Schema(description = "游客邮箱")
-    private String email;
-
     @NotBlank(message = "评论内容不能为空")
     @Schema(description = "评论内容", example = "写得真好！")
     private String content;

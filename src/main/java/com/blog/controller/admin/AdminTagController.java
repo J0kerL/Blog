@@ -28,6 +28,12 @@ public class AdminTagController {
         return Result.ok(tagService.listAll());
     }
 
+    @Operation(summary = "搜索标签")
+    @GetMapping("/search")
+    public Result<List<TagVO>> search(@RequestParam(required = false) String keyword) {
+        return Result.ok(tagService.search(keyword));
+    }
+
     @Operation(summary = "创建标签")
     @PostMapping
     public Result<TagVO> create(@Valid @RequestBody TagDTO dto) {

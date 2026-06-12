@@ -32,6 +32,12 @@ public class CommentVO {
     @Schema(description = "头像")
     private String avatar;
 
+    @Schema(description = "评论状态：0=待审核 1=已通过 2=已拒绝")
+    private Integer status;
+
+    @Schema(description = "所属文章标题")
+    private String postTitle;
+
     @Schema(description = "评论时间")
     private LocalDateTime createdAt;
 

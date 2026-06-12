@@ -9,6 +9,8 @@ public interface TagService {
 
     List<TagVO> listAll();
 
+    List<TagVO> search(String keyword);
+
     TagVO create(TagDTO dto);
 
     TagVO update(Long id, TagDTO dto);

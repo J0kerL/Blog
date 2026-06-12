@@ -24,5 +24,11 @@ public interface CommentMapper {
 
     int deleteById(@Param("id") Long id);
 
-    List<Comment> findAdminList(@Param("postId") Long postId, @Param("status") Integer status);
+    /** 查询某个评论的所有直接子评论 ID */
+    List<Long> findIdsByParentId(@Param("parentId") Long parentId);
+
+    List<Comment> findAdminList(@Param("postId") Long postId, @Param("status") Integer status, @Param("keyword") String keyword);
+
+    /** 查询待审核且创建时间超过指定秒数的评论（用于 AI 自动审核） */
+    List<Comment> findPendingOlderThanSeconds(@Param("seconds") int seconds);
 }

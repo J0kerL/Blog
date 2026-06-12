@@ -5,7 +5,7 @@ import com.blog.common.ResultCode;
 import com.blog.dto.CategoryDTO;
 import com.blog.entity.Category;
 import com.blog.mapper.CategoryMapper;
-import com.blog.mapper.convert.EntityConverter;
+import com.blog.converter.EntityConverter;
 import com.blog.service.CategoryService;
 import com.blog.util.SlugUtil;
 import com.blog.vo.CategoryVO;
