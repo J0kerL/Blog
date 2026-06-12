@@ -31,3 +31,18 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### 运行时日志 ###
+logs/
+*.log
+
+### 本地环境变量 ###
+.env
+application-local.yaml
+
+### 编译产物 ###
+*.class
+
+### OS ###
+.DS_Store
+Thumbs.db
