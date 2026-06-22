@@ -16,6 +16,8 @@ import com.blog.vo.*;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PostServiceImpl implements PostService {
@@ -33,6 +36,7 @@ public class PostServiceImpl implements PostService {
     private final UserMapper userMapper;
     private final TagMapper tagMapper;
     private final EntityConverter entityConverter;
+    private final ChatClient chatClient;
 
     private static final int MAX_PAGE_SIZE = 50;
 
@@ -49,6 +53,11 @@ public class PostServiceImpl implements PostService {
         post.setStatus(dto.getStatus());
         post.setIsTop(dto.getIsTop());
         post.setAllowComment(dto.getAllowComment());
+
+        // AI 自动生成摘要
+        if ((post.getSummary() == null || post.getSummary().isBlank()) && dto.getContent() != null && !dto.getContent().isBlank()) {
+            post.setSummary(generateSummaryByAi(dto.getTitle(), dto.getContent()));
+        }
 
         if (post.getSlug() == null || post.getSlug().isBlank()) {
             post.setSlug(SlugUtil.generateSlug(dto.getTitle()));
@@ -106,6 +115,12 @@ public class PostServiceImpl implements PostService {
         updateParam.setIsTop(dto.getIsTop());
         updateParam.setAllowComment(dto.getAllowComment());
         updateParam.setPublishedAt(publishedAt);
+
+        // AI 自动生成摘要
+        if ((dto.getSummary() == null || dto.getSummary().isBlank()) && dto.getContent() != null && !dto.getContent().isBlank()) {
+            updateParam.setSummary(generateSummaryByAi(dto.getTitle(), dto.getContent()));
+        }
+
         postMapper.update(updateParam);
 
         if (dto.getCategoryIds() != null) {
@@ -286,5 +301,26 @@ public class PostServiceImpl implements PostService {
         return tagMapper.findByPostId(postId).stream()
                 .map(entityConverter::toTagVO)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 调用 AI 根据标题和内容自动生成摘要，失败时返回空字符串
+     */
+    private String generateSummaryByAi(String title, String content) {
+        try {
+            String truncatedContent = content.length() > 1000 ? content.substring(0, 1000) : content;
+            String prompt = String.format(
+                    "请根据以下博客文章信息，生成一段 120 字以内的中文摘要，简洁概括文章核心内容，不要包含开头“本文”字样：\n\n标题：%s\n内容片段：%s",
+                    title != null ? title : "未提供",
+                    truncatedContent
+            );
+            return chatClient.prompt()
+                    .user(prompt)
+                    .call()
+                    .content();
+        } catch (Exception e) {
+            log.warn("AI 自动生成摘要失败，文章将使用空摘要: {}", e.getMessage());
+            return "";
+        }
     }
 }
