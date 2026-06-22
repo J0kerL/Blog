@@ -89,4 +89,17 @@
         ORDER BY p.created_at DESC
     </select>
 
+    <!-- 用户自己的文章列表 -->
+    <select id="findByUserId" resultMap="postResultMap">
+        SELECT p.id, p.user_id, p.title, p.slug, p.summary, p.cover_image, p.status, p.is_top, p.allow_comment, p.view_count, p.published_at, p.created_at, p.updated_at FROM t_post p
+        WHERE p.user_id = #{userId}
+        <if test="status != null">
+            AND p.status = #{status}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (p.title LIKE CONCAT('%', #{keyword}, '%') OR p.summary LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY p.created_at DESC
+    </select>
+
 </mapper>

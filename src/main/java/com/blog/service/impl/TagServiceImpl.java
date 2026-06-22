@@ -31,6 +31,12 @@ public class TagServiceImpl implements TagService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<TagVO> listPublished() {
+        return tagMapper.findAll().stream().map(this::toVOWithPublishedCount).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<TagVO> search(String keyword) {
         return tagMapper.search(keyword).stream().map(this::toVOWithPostCount).collect(Collectors.toList());
     }
@@ -81,6 +87,12 @@ public class TagServiceImpl implements TagService {
     private TagVO toVOWithPostCount(Tag tag) {
         TagVO vo = entityConverter.toTagVO(tag);
         vo.setPostCount(tagMapper.countPostsByTagId(tag.getId()));
+        return vo;
+    }
+
+    private TagVO toVOWithPublishedCount(Tag tag) {
+        TagVO vo = entityConverter.toTagVO(tag);
+        vo.setPostCount(tagMapper.countPublishedPostsByTagId(tag.getId()));
         return vo;
     }
 }

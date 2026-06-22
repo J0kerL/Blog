@@ -10,6 +10,9 @@ public interface TagMapper {
     @Select("SELECT * FROM t_tag WHERE id = #{id}")
     Tag findById(Long id);
 
+    @Select("SELECT * FROM t_tag WHERE name = #{name}")
+    Tag findByName(String name);
+
     @Select("SELECT * FROM t_tag ORDER BY id ASC")
     List<Tag> findAll();
 
@@ -49,4 +52,7 @@ public interface TagMapper {
 
     @Select("SELECT COUNT(*) FROM t_post_tag WHERE tag_id = #{tagId}")
     int countPostsByTagId(Long tagId);
+
+    @Select("SELECT COUNT(*) FROM t_post_tag pt INNER JOIN t_post p ON pt.post_id = p.id WHERE pt.tag_id = #{tagId} AND p.status = 1")
+    int countPublishedPostsByTagId(Long tagId);
 }

@@ -13,6 +13,9 @@ public interface CategoryMapper {
     @Select("SELECT * FROM t_category WHERE slug = #{slug}")
     Category findBySlug(String slug);
 
+    @Select("SELECT * FROM t_category WHERE name = #{name}")
+    Category findByName(String name);
+
     @Select("SELECT * FROM t_category ORDER BY sort_order ASC, id ASC")
     List<Category> findAll();
 
@@ -43,4 +46,7 @@ public interface CategoryMapper {
 
     @Select("SELECT COUNT(*) FROM t_post_category WHERE category_id = #{categoryId}")
     int countPostsByCategoryId(Long categoryId);
+
+    @Select("SELECT COUNT(*) FROM t_post_category pc INNER JOIN t_post p ON pc.post_id = p.id WHERE pc.category_id = #{categoryId} AND p.status = 1")
+    int countPublishedPostsByCategoryId(Long categoryId);
 }

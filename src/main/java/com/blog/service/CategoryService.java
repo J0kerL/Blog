@@ -9,6 +9,8 @@ public interface CategoryService {
 
     List<CategoryVO> listAll();
 
+    List<CategoryVO> listPublished();
+
     List<CategoryVO> search(String keyword);
 
     CategoryVO create(CategoryDTO dto);

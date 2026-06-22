@@ -9,6 +9,8 @@ public interface TagService {
 
     List<TagVO> listAll();
 
+    List<TagVO> listPublished();
+
     List<TagVO> search(String keyword);
 
     TagVO create(TagDTO dto);

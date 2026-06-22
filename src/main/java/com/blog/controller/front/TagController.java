@@ -23,6 +23,6 @@ public class TagController {
     @Operation(summary = "标签列表")
     @GetMapping
     public Result<List<TagVO>> list() {
-        return Result.ok(tagService.listAll());
+        return Result.ok(tagService.listPublished());
     }
 }

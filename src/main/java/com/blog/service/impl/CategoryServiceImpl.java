@@ -31,6 +31,12 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<CategoryVO> listPublished() {
+        return categoryMapper.findAll().stream().map(this::toVOWithPublishedCount).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<CategoryVO> search(String keyword) {
         return categoryMapper.search(keyword).stream().map(this::toVOWithPostCount).collect(Collectors.toList());
     }
@@ -107,6 +113,12 @@ public class CategoryServiceImpl implements CategoryService {
     private CategoryVO toVOWithPostCount(Category category) {
         CategoryVO vo = entityConverter.toCategoryVO(category);
         vo.setPostCount(categoryMapper.countPostsByCategoryId(category.getId()));
+        return vo;
+    }
+
+    private CategoryVO toVOWithPublishedCount(Category category) {
+        CategoryVO vo = entityConverter.toCategoryVO(category);
+        vo.setPostCount(categoryMapper.countPublishedPostsByCategoryId(category.getId()));
         return vo;
     }
 }

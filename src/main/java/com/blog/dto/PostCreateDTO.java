@@ -49,4 +49,10 @@ public class PostCreateDTO {
 
     @Schema(description = "标签 ID 列表")
     private List<Long> tagIds;
+
+    @Schema(description = "新建分类名称列表（自动创建并关联）")
+    private List<String> newCategoryNames;
+
+    @Schema(description = "新建标签名称列表（自动创建并关联）")
+    private List<String> newTagNames;
 }

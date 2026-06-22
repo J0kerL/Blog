@@ -32,4 +32,11 @@ public interface PostMapper {
     List<Post> findAdminList(@Param("keyword") String keyword,
                              @Param("status") Integer status,
                              @Param("categoryId") Long categoryId);
+
+    /**
+     * 查询指定用户的文章列表
+     */
+    List<Post> findByUserId(@Param("userId") Long userId,
+                            @Param("keyword") String keyword,
+                            @Param("status") Integer status);
 }

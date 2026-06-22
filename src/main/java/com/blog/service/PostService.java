@@ -24,4 +24,18 @@ public interface PostService {
     PageResult<PostListVO> listPublished(int pageNum, int pageSize, String keyword, Long categoryId, Long tagId);
 
     PageResult<PostListVO> listAdmin(int pageNum, int pageSize, String keyword, Integer status, Long categoryId);
+
+    // ========== 用户文章操作 ==========
+
+    PostVO createForUser(Long userId, PostCreateDTO dto);
+
+    PostVO updateForUser(Long userId, Long postId, PostCreateDTO dto);
+
+    void deleteForUser(Long userId, Long postId);
+
+    PostVO updateStatusForUser(Long userId, Long postId, Integer status);
+
+    PostVO getByIdForUser(Long userId, Long postId);
+
+    PageResult<PostListVO> listByUser(Long userId, int pageNum, int pageSize, String keyword, Integer status);
 }

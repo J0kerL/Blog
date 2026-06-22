@@ -23,6 +23,6 @@ public class CategoryController {
     @Operation(summary = "分类列表")
     @GetMapping
     public Result<List<CategoryVO>> list() {
-        return Result.ok(categoryService.listAll());
+        return Result.ok(categoryService.listPublished());
     }
 }

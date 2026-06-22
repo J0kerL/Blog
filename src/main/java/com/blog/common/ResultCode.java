@@ -28,7 +28,8 @@ public enum ResultCode {
     CAPTCHA_EXPIRED(1011, "验证码已过期"),
     CAPTCHA_ERROR(1012, "验证码错误"),
     OLD_PASSWORD_ERROR(1013, "旧密码错误"),
-    EMAIL_NOT_FOUND(1014, "邮箱未注册");
+    EMAIL_NOT_FOUND(1014, "邮箱未注册"),
+    POST_NOT_OWNER(1015, "无权操作此文章");
 
     private final int code;
     private final String message;

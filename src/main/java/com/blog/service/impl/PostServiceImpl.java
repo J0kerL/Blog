@@ -34,6 +34,7 @@ public class PostServiceImpl implements PostService {
     private final PostCategoryMapper postCategoryMapper;
     private final PostTagMapper postTagMapper;
     private final UserMapper userMapper;
+    private final CategoryMapper categoryMapper;
     private final TagMapper tagMapper;
     private final EntityConverter entityConverter;
     private final ChatClient chatClient;
@@ -76,14 +77,18 @@ public class PostServiceImpl implements PostService {
 
         postMapper.insert(post);
 
-        if (dto.getCategoryIds() != null) {
-            for (Long catId : dto.getCategoryIds()) {
+        // 解析新建分类/标签名称，自动创建并合并到 ID 列表
+        List<Long> allCategoryIds = resolveCategoryIds(dto.getCategoryIds(), dto.getNewCategoryNames());
+        List<Long> allTagIds = resolveTagIds(dto.getTagIds(), dto.getNewTagNames());
+
+        if (!allCategoryIds.isEmpty()) {
+            for (Long catId : allCategoryIds) {
                 postCategoryMapper.insert(post.getId(), catId);
             }
         }
 
-        if (dto.getTagIds() != null) {
-            for (Long tagId : dto.getTagIds()) {
+        if (!allTagIds.isEmpty()) {
+            for (Long tagId : allTagIds) {
                 postTagMapper.insert(post.getId(), tagId);
             }
         }
@@ -123,18 +128,18 @@ public class PostServiceImpl implements PostService {
 
         postMapper.update(updateParam);
 
-        if (dto.getCategoryIds() != null) {
-            postCategoryMapper.deleteByPostId(postId);
-            for (Long catId : dto.getCategoryIds()) {
-                postCategoryMapper.insert(postId, catId);
-            }
+        // 解析新建分类/标签名称，自动创建并合并到 ID 列表
+        List<Long> allCategoryIds = resolveCategoryIds(dto.getCategoryIds(), dto.getNewCategoryNames());
+        List<Long> allTagIds = resolveTagIds(dto.getTagIds(), dto.getNewTagNames());
+
+        postCategoryMapper.deleteByPostId(postId);
+        for (Long catId : allCategoryIds) {
+            postCategoryMapper.insert(postId, catId);
         }
 
-        if (dto.getTagIds() != null) {
-            postTagMapper.deleteByPostId(postId);
-            for (Long tagId : dto.getTagIds()) {
-                postTagMapper.insert(postId, tagId);
-            }
+        postTagMapper.deleteByPostId(postId);
+        for (Long tagId : allTagIds) {
+            postTagMapper.insert(postId, tagId);
         }
 
         return getById(postId);
@@ -301,6 +306,122 @@ public class PostServiceImpl implements PostService {
         return tagMapper.findByPostId(postId).stream()
                 .map(entityConverter::toTagVO)
                 .collect(Collectors.toList());
+    }
+
+    // ========== 用户文章操作 ==========
+
+    @Override
+    @Transactional
+    public PostVO createForUser(Long userId, PostCreateDTO dto) {
+        return create(userId, dto);
+    }
+
+    @Override
+    @Transactional
+    public PostVO updateForUser(Long userId, Long postId, PostCreateDTO dto) {
+        checkOwnership(userId, postId);
+        return update(postId, dto);
+    }
+
+    @Override
+    @Transactional
+    public void deleteForUser(Long userId, Long postId) {
+        checkOwnership(userId, postId);
+        delete(postId);
+    }
+
+    @Override
+    @Transactional
+    public PostVO updateStatusForUser(Long userId, Long postId, Integer status) {
+        checkOwnership(userId, postId);
+        return updateStatus(postId, status);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PostVO getByIdForUser(Long userId, Long postId) {
+        checkOwnership(userId, postId);
+        return getById(postId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResult<PostListVO> listByUser(Long userId, int pageNum, int pageSize, String keyword, Integer status) {
+        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
+        PageHelper.startPage(pageNum, pageSize);
+        List<Post> posts = postMapper.findByUserId(userId, keyword, status);
+        PageInfo<Post> pageInfo = new PageInfo<>(posts);
+        List<PostListVO> voList = enrichPostListVO(posts);
+        return PageResult.of(pageInfo, voList);
+    }
+
+    /**
+     * 将已有的分类 ID 列表和新建分类名称列表合并，自动创建不存在的分类
+     */
+    private List<Long> resolveCategoryIds(List<Long> existingIds, List<String> newNames) {
+        List<Long> result = new ArrayList<>();
+        if (existingIds != null) {
+            result.addAll(existingIds);
+        }
+        if (newNames != null) {
+            for (String name : newNames) {
+                String trimmed = name.trim();
+                if (trimmed.isEmpty()) continue;
+                Category existing = categoryMapper.findByName(trimmed);
+                if (existing != null) {
+                    if (!result.contains(existing.getId())) {
+                        result.add(existing.getId());
+                    }
+                } else {
+                    Category cat = new Category();
+                    cat.setName(trimmed);
+                    cat.setSlug(SlugUtil.generateSlug(trimmed));
+                    cat.setSortOrder(0);
+                    categoryMapper.insert(cat);
+                    result.add(cat.getId());
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 将已有的标签 ID 列表和新建标签名称列表合并，自动创建不存在的标签
+     */
+    private List<Long> resolveTagIds(List<Long> existingIds, List<String> newNames) {
+        List<Long> result = new ArrayList<>();
+        if (existingIds != null) {
+            result.addAll(existingIds);
+        }
+        if (newNames != null) {
+            for (String name : newNames) {
+                String trimmed = name.trim();
+                if (trimmed.isEmpty()) continue;
+                Tag existing = tagMapper.findByName(trimmed);
+                if (existing != null) {
+                    if (!result.contains(existing.getId())) {
+                        result.add(existing.getId());
+                    }
+                } else {
+                    Tag tag = new Tag();
+                    tag.setName(trimmed);
+                    tag.setSlug(SlugUtil.generateSlug(trimmed));
+                    tagMapper.insert(tag);
+                    result.add(tag.getId());
+                }
+            }
+        }
+        return result;
+    }
+
+    private void checkOwnership(Long userId, Long postId) {
+        Post post = postMapper.findById(postId);
+        if (post == null) {
+            throw new BusinessException(ResultCode.POST_NOT_FOUND);
+        }
+        if (!userId.equals(post.getUserId())) {
+            throw new BusinessException(ResultCode.POST_NOT_OWNER);
+        }
     }
 
     /**
