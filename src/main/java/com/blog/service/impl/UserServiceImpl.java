@@ -60,12 +60,11 @@ public class UserServiceImpl implements UserService {
         if (!dto.getPassword().equals(dto.getConfirmPassword())) {
             throw new BusinessException("两次输入的密码不一致");
         }
+        captchaService.verifySliderCaptchaToken(dto.getCaptchaKey(), dto.getCaptchaCode());
+
         if (userMapper.findByUsername(dto.getUsername()) != null) {
             throw new BusinessException(ResultCode.USER_ALREADY_EXISTS);
         }
-
-        // 校验验证码
-        captchaService.verifyCaptcha(dto.getCaptchaKey(), dto.getCaptchaCode());
 
         User user = new User();
         user.setUsername(dto.getUsername());

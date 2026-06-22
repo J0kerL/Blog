@@ -4,10 +4,12 @@ import com.blog.common.Result;
 import com.blog.dto.ForgotPasswordDTO;
 import com.blog.dto.LoginDTO;
 import com.blog.dto.RegisterDTO;
+import com.blog.dto.SliderCaptchaVerifyDTO;
 import com.blog.service.CaptchaService;
 import com.blog.service.UserService;
 import com.blog.vo.CaptchaVO;
 import com.blog.vo.LoginVO;
+import com.blog.vo.SliderCaptchaVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -27,6 +29,18 @@ public class AuthController {
     @GetMapping("/captcha")
     public Result<CaptchaVO> getCaptcha() {
         return Result.ok(captchaService.generateCaptcha());
+    }
+
+    @Operation(summary = "获取滑块验证码")
+    @GetMapping("/captcha/slider")
+    public Result<SliderCaptchaVO> getSliderCaptcha() {
+        return Result.ok(captchaService.generateSliderCaptcha());
+    }
+
+    @Operation(summary = "校验滑块验证码")
+    @PostMapping("/captcha/slider/verify")
+    public Result<SliderCaptchaVO> verifySliderCaptcha(@Valid @RequestBody SliderCaptchaVerifyDTO dto) {
+        return Result.ok(captchaService.verifySliderCaptcha(dto.getCaptchaKey(), dto.getSliderX()));
     }
 
     @Operation(summary = "用户注册")
