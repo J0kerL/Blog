@@ -136,6 +136,12 @@ public class PostServiceImpl implements PostService {
         Post updateParam = new Post();
         updateParam.setId(postId);
         updateParam.setStatus(status);
+
+        // 从非发布状态变为已发布时，设置发布时间
+        if (post.getStatus() != 1 && status == 1) {
+            updateParam.setPublishedAt(LocalDateTime.now());
+        }
+
         postMapper.update(updateParam);
 
         return getById(postId);
