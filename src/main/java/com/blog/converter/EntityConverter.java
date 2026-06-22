@@ -10,8 +10,6 @@ public interface EntityConverter {
 
     UserVO toUserVO(User user);
 
-    AdminUserVO toAdminUserVO(User user);
-
     CategoryVO toCategoryVO(Category category);
 
     TagVO toTagVO(Tag tag);

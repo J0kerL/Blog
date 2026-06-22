@@ -4,98 +4,80 @@ import com.blog.common.BusinessException;
 import com.blog.common.PageResult;
 import com.blog.common.ResultCode;
 import com.blog.dto.PostCreateDTO;
-import com.blog.entity.Category;
 import com.blog.entity.Post;
-import com.blog.entity.Tag;
-import com.blog.entity.User;
-import com.blog.mapper.*;
-import com.blog.converter.EntityConverter;
-import com.blog.service.PostService;
+import com.blog.mapper.PostMapper;
+import com.blog.service.*;
 import com.blog.util.SlugUtil;
-import com.blog.vo.*;
+import com.blog.vo.PostListVO;
+import com.blog.vo.PostVO;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.List;
 
+/**
+ * 文章服务实现类
+ *
+ * <p>负责文章的 CRUD 操作和业务逻辑处理。通过注入其他服务来处理复杂的业务逻辑：</p>
+ * <ul>
+ *   <li>{@link PostCategoryService} - 分类标签关联处理</li>
+ *   <li>{@link PostEnrichmentService} - 文章数据丰富化</li>
+ *   <li>{@link AiSummaryService} - AI 摘要生成</li>
+ *   <li>{@link ViewCountService} - 视图计数管理</li>
+ * </ul>
+ *
+ * @author Diamond
+ * @since 1.0.0
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PostServiceImpl implements PostService {
 
     private final PostMapper postMapper;
-    private final PostCategoryMapper postCategoryMapper;
-    private final PostTagMapper postTagMapper;
-    private final UserMapper userMapper;
-    private final CategoryMapper categoryMapper;
-    private final TagMapper tagMapper;
-    private final EntityConverter entityConverter;
-    private final ChatClient chatClient;
+    private final PostCategoryService postCategoryService;
+    private final PostEnrichmentService postEnrichmentService;
+    private final AiSummaryService aiSummaryService;
+    private final ViewCountService viewCountService;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
 
+    /** 最大分页大小 */
     private static final int MAX_PAGE_SIZE = 50;
+    
+    /** 文章详情缓存 Key 前缀 */
+    private static final String CACHE_KEY_PREFIX = "cache:post:detail:";
+    private static final Duration CACHE_TTL = Duration.ofMinutes(15);
 
+    // ========== Admin 文章操作 ==========
+
+    /**
+     * 创建文章（Admin）
+     */
     @Override
     @Transactional
     public PostVO create(Long userId, PostCreateDTO dto) {
-        Post post = new Post();
-        post.setUserId(userId);
-        post.setTitle(dto.getTitle());
-        post.setSlug(dto.getSlug());
-        post.setSummary(dto.getSummary());
-        post.setContent(dto.getContent());
-        post.setCoverImage(dto.getCoverImage());
-        post.setStatus(dto.getStatus());
-        post.setIsTop(dto.getIsTop());
-        post.setAllowComment(dto.getAllowComment());
-
-        // AI 自动生成摘要
-        if ((post.getSummary() == null || post.getSummary().isBlank()) && dto.getContent() != null && !dto.getContent().isBlank()) {
-            post.setSummary(generateSummaryByAi(dto.getTitle(), dto.getContent()));
-        }
-
-        if (post.getSlug() == null || post.getSlug().isBlank()) {
-            post.setSlug(SlugUtil.generateSlug(dto.getTitle()));
-        }
-
-        if (dto.getStatus() != null && dto.getStatus() == 1) {
-            post.setPublishedAt(LocalDateTime.now());
-        }
-
-        if (post.getIsTop() == null) {
-            post.setIsTop(0);
-        }
-        if (post.getAllowComment() == null) {
-            post.setAllowComment(1);
-        }
-
+        Post post = buildPostFromDTO(dto, userId);
         postMapper.insert(post);
 
-        // 解析新建分类/标签名称，自动创建并合并到 ID 列表
-        List<Long> allCategoryIds = resolveCategoryIds(dto.getCategoryIds(), dto.getNewCategoryNames());
-        List<Long> allTagIds = resolveTagIds(dto.getTagIds(), dto.getNewTagNames());
-
-        if (!allCategoryIds.isEmpty()) {
-            for (Long catId : allCategoryIds) {
-                postCategoryMapper.insert(post.getId(), catId);
-            }
-        }
-
-        if (!allTagIds.isEmpty()) {
-            for (Long tagId : allTagIds) {
-                postTagMapper.insert(post.getId(), tagId);
-            }
-        }
+        // 关联分类和标签
+        associateCategoriesAndTags(post.getId(), dto);
 
         return getById(post.getId());
     }
 
+    /**
+     * 更新文章（Admin）
+     */
     @Override
     @Transactional
     public PostVO update(Long postId, PostCreateDTO dto) {
@@ -104,47 +86,23 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException(ResultCode.POST_NOT_FOUND);
         }
 
-        LocalDateTime publishedAt = null;
-        if (dto.getStatus() != null && post.getStatus() != 1 && dto.getStatus() == 1) {
-            publishedAt = LocalDateTime.now();
-        }
-
-        Post updateParam = new Post();
-        updateParam.setId(postId);
-        updateParam.setTitle(dto.getTitle());
-        updateParam.setSlug(dto.getSlug());
-        updateParam.setSummary(dto.getSummary());
-        updateParam.setContent(dto.getContent());
-        updateParam.setCoverImage(dto.getCoverImage());
-        updateParam.setStatus(dto.getStatus());
-        updateParam.setIsTop(dto.getIsTop());
-        updateParam.setAllowComment(dto.getAllowComment());
-        updateParam.setPublishedAt(publishedAt);
-
-        // AI 自动生成摘要
-        if ((dto.getSummary() == null || dto.getSummary().isBlank()) && dto.getContent() != null && !dto.getContent().isBlank()) {
-            updateParam.setSummary(generateSummaryByAi(dto.getTitle(), dto.getContent()));
-        }
-
+        Post updateParam = buildUpdateParam(postId, dto, post.getStatus());
         postMapper.update(updateParam);
 
-        // 解析新建分类/标签名称，自动创建并合并到 ID 列表
-        List<Long> allCategoryIds = resolveCategoryIds(dto.getCategoryIds(), dto.getNewCategoryNames());
-        List<Long> allTagIds = resolveTagIds(dto.getTagIds(), dto.getNewTagNames());
+        // 重新关联分类和标签
+        postCategoryService.deleteCategoryAssociations(postId);
+        postCategoryService.deleteTagAssociations(postId);
+        associateCategoriesAndTags(postId, dto);
 
-        postCategoryMapper.deleteByPostId(postId);
-        for (Long catId : allCategoryIds) {
-            postCategoryMapper.insert(postId, catId);
-        }
-
-        postTagMapper.deleteByPostId(postId);
-        for (Long tagId : allTagIds) {
-            postTagMapper.insert(postId, tagId);
-        }
-
+        // 清除文章缓存
+        clearPostCache(postId);
+        
         return getById(postId);
     }
 
+    /**
+     * 更新文章状态（Admin）
+     */
     @Override
     @Transactional
     public PostVO updateStatus(Long postId, Integer status) {
@@ -163,10 +121,16 @@ public class PostServiceImpl implements PostService {
         }
 
         postMapper.update(updateParam);
-
+        
+        // 清除文章缓存
+        clearPostCache(postId);
+        
         return getById(postId);
     }
 
+    /**
+     * 删除文章（Admin）
+     */
     @Override
     @Transactional
     public void delete(Long postId) {
@@ -174,21 +138,52 @@ public class PostServiceImpl implements PostService {
         if (post == null) {
             throw new BusinessException(ResultCode.POST_NOT_FOUND);
         }
-        postCategoryMapper.deleteByPostId(postId);
-        postTagMapper.deleteByPostId(postId);
+        postCategoryService.deleteCategoryAssociations(postId);
+        postCategoryService.deleteTagAssociations(postId);
         postMapper.deleteById(postId);
+        
+        // 清除文章缓存
+        clearPostCache(postId);
     }
 
+    /**
+     * 获取文章详情（Admin）
+     */
     @Override
     @Transactional(readOnly = true)
     public PostVO getById(Long id) {
+        // 尝试从缓存获取
+        String cacheKey = CACHE_KEY_PREFIX + id;
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            try {
+                return objectMapper.readValue(cached, PostVO.class);
+            } catch (JsonProcessingException e) {
+                log.warn("反序列化文章缓存失败: id={}", id, e);
+            }
+        }
+        
+        // 从数据库查询
         Post post = postMapper.findById(id);
         if (post == null) {
             throw new BusinessException(ResultCode.POST_NOT_FOUND);
         }
-        return enrichPostVO(post);
+        PostVO result = postEnrichmentService.enrichPostVO(post);
+        
+        // 写入缓存
+        try {
+            String json = objectMapper.writeValueAsString(result);
+            redisTemplate.opsForValue().set(cacheKey, json, CACHE_TTL);
+        } catch (JsonProcessingException e) {
+            log.warn("序列化文章缓存失败: id={}", id, e);
+        }
+        
+        return result;
     }
 
+    /**
+     * 获取文章详情（前台浏览，增加阅读量）
+     */
     @Override
     @Transactional
     public PostVO getByIdForView(Long id) {
@@ -196,11 +191,20 @@ public class PostServiceImpl implements PostService {
         if (post == null) {
             throw new BusinessException(ResultCode.POST_NOT_FOUND);
         }
-        postMapper.incrementViewCount(id);
-        post.setViewCount(post.getViewCount() == null ? 1 : post.getViewCount() + 1);
-        return enrichPostVO(post);
+        // 使用 Redis 缓存增加阅读量
+        viewCountService.incrementViewCount(id);
+        post.setViewCount(viewCountService.getViewCount(id, post.getViewCount()));
+        PostVO result = postEnrichmentService.enrichPostVO(post);
+        
+        // 更新缓存中的阅读量
+        updateCachedViewCount(id, result.getViewCount());
+        
+        return result;
     }
 
+    /**
+     * 通过 Slug 获取文章详情（前台浏览，增加阅读量）
+     */
     @Override
     @Transactional
     public PostVO getBySlug(String slug) {
@@ -208,11 +212,20 @@ public class PostServiceImpl implements PostService {
         if (post == null) {
             throw new BusinessException(ResultCode.POST_NOT_FOUND);
         }
-        postMapper.incrementViewCount(post.getId());
-        post.setViewCount(post.getViewCount() == null ? 1 : post.getViewCount() + 1);
-        return enrichPostVO(post);
+        // 使用 Redis 缓存增加阅读量
+        viewCountService.incrementViewCount(post.getId());
+        post.setViewCount(viewCountService.getViewCount(post.getId(), post.getViewCount()));
+        PostVO result = postEnrichmentService.enrichPostVO(post);
+        
+        // 更新缓存中的阅读量
+        updateCachedViewCount(post.getId(), result.getViewCount());
+        
+        return result;
     }
 
+    /**
+     * 前台文章列表（分页、搜索、分类/标签过滤）
+     */
     @Override
     @Transactional(readOnly = true)
     public PageResult<PostListVO> listPublished(int pageNum, int pageSize, String keyword, Long categoryId, Long tagId) {
@@ -220,10 +233,13 @@ public class PostServiceImpl implements PostService {
         PageHelper.startPage(pageNum, pageSize);
         List<Post> posts = postMapper.findPublishedList(keyword, categoryId, tagId);
         PageInfo<Post> pageInfo = new PageInfo<>(posts);
-        List<PostListVO> voList = enrichPostListVO(posts);
+        List<PostListVO> voList = postEnrichmentService.enrichPostListVO(posts);
         return PageResult.of(pageInfo, voList);
     }
 
+    /**
+     * Admin 文章列表（含全部状态）
+     */
     @Override
     @Transactional(readOnly = true)
     public PageResult<PostListVO> listAdmin(int pageNum, int pageSize, String keyword, Integer status, Long categoryId) {
@@ -231,91 +247,24 @@ public class PostServiceImpl implements PostService {
         PageHelper.startPage(pageNum, pageSize);
         List<Post> posts = postMapper.findAdminList(keyword, status, categoryId);
         PageInfo<Post> pageInfo = new PageInfo<>(posts);
-        List<PostListVO> voList = enrichPostListVO(posts);
+        List<PostListVO> voList = postEnrichmentService.enrichPostListVO(posts);
         return PageResult.of(pageInfo, voList);
-    }
-
-    /**
-     * 单个 Post → PostVO（详情页，N 次查询可接受）
-     */
-    private PostVO enrichPostVO(Post post) {
-        PostVO vo = entityConverter.toPostVO(post);
-        vo.setAuthor(loadAuthor(post.getUserId()));
-        vo.setCategories(loadCategories(post.getId()));
-        vo.setTags(loadTags(post.getId()));
-        return vo;
-    }
-
-    /**
-     * 批量 Post → PostListVO（列表页，消除 N+1）
-     * 将 N×3 次查询优化为 3 次批量查询 + 内存组装
-     */
-    private List<PostListVO> enrichPostListVO(List<Post> posts) {
-        if (posts.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // 收集所有需要查询的 ID
-        Set<Long> userIds = posts.stream().map(Post::getUserId).filter(Objects::nonNull).collect(Collectors.toSet());
-        Set<Long> postIds = posts.stream().map(Post::getId).collect(Collectors.toSet());
-
-        // 批量查询作者（1 次 SQL）
-        Map<Long, User> userMap = userMapper.findByIds(new ArrayList<>(userIds)).stream()
-                .collect(Collectors.toMap(User::getId, u -> u));
-
-        // 批量查询分类（1 次 SQL）
-        Map<Long, List<Category>> categoryMap = postCategoryMapper.findCategoriesByPostIds(new ArrayList<>(postIds)).stream()
-                .collect(Collectors.groupingBy(Category::getPostId));
-
-        // 批量查询标签（1 次 SQL）
-        Map<Long, List<Tag>> tagMap = tagMapper.findByPostIds(new ArrayList<>(postIds)).stream()
-                .collect(Collectors.groupingBy(Tag::getPostId));
-
-        // 内存组装
-        return posts.stream().map(post -> {
-            PostListVO vo = entityConverter.toPostListVO(post);
-
-            User user = userMap.get(post.getUserId());
-            if (user != null) {
-                vo.setAuthor(entityConverter.toUserVO(user));
-            }
-
-            List<Category> categories = categoryMap.getOrDefault(post.getId(), Collections.emptyList());
-            vo.setCategories(categories.stream().map(entityConverter::toCategoryVO).collect(Collectors.toList()));
-
-            List<Tag> tags = tagMap.getOrDefault(post.getId(), Collections.emptyList());
-            vo.setTags(tags.stream().map(entityConverter::toTagVO).collect(Collectors.toList()));
-
-            return vo;
-        }).collect(Collectors.toList());
-    }
-
-    private UserVO loadAuthor(Long userId) {
-        if (userId == null) return null;
-        User user = userMapper.findById(userId);
-        return user != null ? entityConverter.toUserVO(user) : null;
-    }
-
-    private List<CategoryVO> loadCategories(Long postId) {
-        return postCategoryMapper.findCategoriesByPostId(postId).stream()
-                .map(entityConverter::toCategoryVO)
-                .collect(Collectors.toList());
-    }
-
-    private List<TagVO> loadTags(Long postId) {
-        return tagMapper.findByPostId(postId).stream()
-                .map(entityConverter::toTagVO)
-                .collect(Collectors.toList());
     }
 
     // ========== 用户文章操作 ==========
 
+    /**
+     * 用户创建文章
+     */
     @Override
     @Transactional
     public PostVO createForUser(Long userId, PostCreateDTO dto) {
         return create(userId, dto);
     }
 
+    /**
+     * 用户更新文章
+     */
     @Override
     @Transactional
     public PostVO updateForUser(Long userId, Long postId, PostCreateDTO dto) {
@@ -323,6 +272,9 @@ public class PostServiceImpl implements PostService {
         return update(postId, dto);
     }
 
+    /**
+     * 用户删除文章
+     */
     @Override
     @Transactional
     public void deleteForUser(Long userId, Long postId) {
@@ -330,6 +282,9 @@ public class PostServiceImpl implements PostService {
         delete(postId);
     }
 
+    /**
+     * 用户更新文章状态
+     */
     @Override
     @Transactional
     public PostVO updateStatusForUser(Long userId, Long postId, Integer status) {
@@ -337,6 +292,9 @@ public class PostServiceImpl implements PostService {
         return updateStatus(postId, status);
     }
 
+    /**
+     * 用户获取文章详情
+     */
     @Override
     @Transactional(readOnly = true)
     public PostVO getByIdForUser(Long userId, Long postId) {
@@ -344,6 +302,9 @@ public class PostServiceImpl implements PostService {
         return getById(postId);
     }
 
+    /**
+     * 用户文章列表
+     */
     @Override
     @Transactional(readOnly = true)
     public PageResult<PostListVO> listByUser(Long userId, int pageNum, int pageSize, String keyword, Integer status) {
@@ -351,69 +312,99 @@ public class PostServiceImpl implements PostService {
         PageHelper.startPage(pageNum, pageSize);
         List<Post> posts = postMapper.findByUserId(userId, keyword, status);
         PageInfo<Post> pageInfo = new PageInfo<>(posts);
-        List<PostListVO> voList = enrichPostListVO(posts);
+        List<PostListVO> voList = postEnrichmentService.enrichPostListVO(posts);
         return PageResult.of(pageInfo, voList);
     }
 
+    // ========== 私有辅助方法 ==========
+
     /**
-     * 将已有的分类 ID 列表和新建分类名称列表合并，自动创建不存在的分类
+     * 从 DTO 构建文章实体
      */
-    private List<Long> resolveCategoryIds(List<Long> existingIds, List<String> newNames) {
-        List<Long> result = new ArrayList<>();
-        if (existingIds != null) {
-            result.addAll(existingIds);
+    private Post buildPostFromDTO(PostCreateDTO dto, Long userId) {
+        Post post = new Post();
+        post.setUserId(userId);
+        post.setTitle(dto.getTitle());
+        post.setSlug(dto.getSlug());
+        post.setSummary(dto.getSummary());
+        post.setContent(dto.getContent());
+        post.setCoverImage(dto.getCoverImage());
+        post.setStatus(dto.getStatus());
+        post.setIsTop(dto.getIsTop());
+        post.setAllowComment(dto.getAllowComment());
+
+        // AI 自动生成摘要
+        if ((post.getSummary() == null || post.getSummary().isBlank())
+                && dto.getContent() != null && !dto.getContent().isBlank()) {
+            post.setSummary(aiSummaryService.generateSummary(dto.getTitle(), dto.getContent()));
         }
-        if (newNames != null) {
-            for (String name : newNames) {
-                String trimmed = name.trim();
-                if (trimmed.isEmpty()) continue;
-                Category existing = categoryMapper.findByName(trimmed);
-                if (existing != null) {
-                    if (!result.contains(existing.getId())) {
-                        result.add(existing.getId());
-                    }
-                } else {
-                    Category cat = new Category();
-                    cat.setName(trimmed);
-                    cat.setSlug(SlugUtil.generateSlug(trimmed));
-                    cat.setSortOrder(0);
-                    categoryMapper.insert(cat);
-                    result.add(cat.getId());
-                }
-            }
+
+        // 自动生成 Slug
+        if (post.getSlug() == null || post.getSlug().isBlank()) {
+            post.setSlug(SlugUtil.generateSlug(dto.getTitle()));
         }
-        return result;
+
+        // 设置发布时间
+        if (dto.getStatus() != null && dto.getStatus() == 1) {
+            post.setPublishedAt(LocalDateTime.now());
+        }
+
+        // 设置默认值
+        if (post.getIsTop() == null) {
+            post.setIsTop(0);
+        }
+        if (post.getAllowComment() == null) {
+            post.setAllowComment(1);
+        }
+
+        return post;
     }
 
     /**
-     * 将已有的标签 ID 列表和新建标签名称列表合并，自动创建不存在的标签
+     * 构建更新参数
      */
-    private List<Long> resolveTagIds(List<Long> existingIds, List<String> newNames) {
-        List<Long> result = new ArrayList<>();
-        if (existingIds != null) {
-            result.addAll(existingIds);
+    private Post buildUpdateParam(Long postId, PostCreateDTO dto, Integer originalStatus) {
+        Post updateParam = new Post();
+        updateParam.setId(postId);
+        updateParam.setTitle(dto.getTitle());
+        updateParam.setSlug(dto.getSlug());
+        updateParam.setSummary(dto.getSummary());
+        updateParam.setContent(dto.getContent());
+        updateParam.setCoverImage(dto.getCoverImage());
+        updateParam.setStatus(dto.getStatus());
+        updateParam.setIsTop(dto.getIsTop());
+        updateParam.setAllowComment(dto.getAllowComment());
+
+        // AI 自动生成摘要
+        if ((dto.getSummary() == null || dto.getSummary().isBlank())
+                && dto.getContent() != null && !dto.getContent().isBlank()) {
+            updateParam.setSummary(aiSummaryService.generateSummary(dto.getTitle(), dto.getContent()));
         }
-        if (newNames != null) {
-            for (String name : newNames) {
-                String trimmed = name.trim();
-                if (trimmed.isEmpty()) continue;
-                Tag existing = tagMapper.findByName(trimmed);
-                if (existing != null) {
-                    if (!result.contains(existing.getId())) {
-                        result.add(existing.getId());
-                    }
-                } else {
-                    Tag tag = new Tag();
-                    tag.setName(trimmed);
-                    tag.setSlug(SlugUtil.generateSlug(trimmed));
-                    tagMapper.insert(tag);
-                    result.add(tag.getId());
-                }
-            }
+
+        // 设置发布时间
+        if (dto.getStatus() != null && originalStatus != 1 && dto.getStatus() == 1) {
+            updateParam.setPublishedAt(LocalDateTime.now());
         }
-        return result;
+
+        return updateParam;
     }
 
+    /**
+     * 关联分类和标签
+     */
+    private void associateCategoriesAndTags(Long postId, PostCreateDTO dto) {
+        List<Long> categoryIds = postCategoryService.resolveCategoryIds(
+                dto.getCategoryIds(), dto.getNewCategoryNames());
+        List<Long> tagIds = postCategoryService.resolveTagIds(
+                dto.getTagIds(), dto.getNewTagNames());
+
+        postCategoryService.associateCategories(postId, categoryIds);
+        postCategoryService.associateTags(postId, tagIds);
+    }
+
+    /**
+     * 检查文章所有权
+     */
     private void checkOwnership(Long userId, Long postId) {
         Post post = postMapper.findById(postId);
         if (post == null) {
@@ -423,25 +414,31 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException(ResultCode.POST_NOT_OWNER);
         }
     }
-
+    
     /**
-     * 调用 AI 根据标题和内容自动生成摘要，失败时返回空字符串
+     * 清除文章缓存
      */
-    private String generateSummaryByAi(String title, String content) {
-        try {
-            String truncatedContent = content.length() > 1000 ? content.substring(0, 1000) : content;
-            String prompt = String.format(
-                    "请根据以下博客文章信息，生成一段 120 字以内的中文摘要，简洁概括文章核心内容，不要包含开头“本文”字样：\n\n标题：%s\n内容片段：%s",
-                    title != null ? title : "未提供",
-                    truncatedContent
-            );
-            return chatClient.prompt()
-                    .user(prompt)
-                    .call()
-                    .content();
-        } catch (Exception e) {
-            log.warn("AI 自动生成摘要失败，文章将使用空摘要: {}", e.getMessage());
-            return "";
+    private void clearPostCache(Long postId) {
+        String cacheKey = CACHE_KEY_PREFIX + postId;
+        redisTemplate.delete(cacheKey);
+        log.debug("文章缓存已清除: id={}", postId);
+    }
+    
+    /**
+     * 更新缓存中的阅读量
+     */
+    private void updateCachedViewCount(Long postId, Long viewCount) {
+        String cacheKey = CACHE_KEY_PREFIX + postId;
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            try {
+                PostVO cachedPost = objectMapper.readValue(cached, PostVO.class);
+                cachedPost.setViewCount(viewCount);
+                String json = objectMapper.writeValueAsString(cachedPost);
+                redisTemplate.opsForValue().set(cacheKey, json, CACHE_TTL);
+            } catch (Exception e) {
+                log.warn("更新缓存阅读量失败: id={}", postId, e);
+            }
         }
     }
 }

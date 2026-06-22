@@ -30,14 +30,6 @@ public class Result<T> implements Serializable {
         return result;
     }
 
-    public static <T> Result<T> ok(String message, T data) {
-        Result<T> result = new Result<>();
-        result.setCode(200);
-        result.setMessage(message);
-        result.setData(data);
-        return result;
-    }
-
     public static <T> Result<T> fail(String message) {
         return fail(400, message);
     }

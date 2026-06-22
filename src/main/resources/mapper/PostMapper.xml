@@ -53,8 +53,9 @@
         DELETE FROM t_post WHERE id = #{id}
     </delete>
 
-    <update id="incrementViewCount">
-        UPDATE t_post SET view_count = view_count + 1 WHERE id = #{id}
+    <!-- 批量增加阅读量（用于定时任务同步） -->
+    <update id="addViewCount">
+        UPDATE t_post SET view_count = view_count + #{viewCount} WHERE id = #{id}
     </update>
 
     <!-- 前台文章列表：已发布 + 动态过滤 -->

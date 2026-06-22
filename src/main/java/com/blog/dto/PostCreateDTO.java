@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -40,9 +39,6 @@ public class PostCreateDTO {
 
     @Schema(description = "是否允许评论", example = "1")
     private Integer allowComment;
-
-    @Schema(description = "定时发布时间")
-    private LocalDateTime scheduledAt;
 
     @Schema(description = "分类 ID 列表")
     private List<Long> categoryIds;

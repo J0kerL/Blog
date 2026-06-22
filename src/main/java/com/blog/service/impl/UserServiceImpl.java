@@ -17,19 +17,25 @@ import com.blog.util.OssUtil;
 import com.blog.vo.AdminUserVO;
 import com.blog.vo.LoginVO;
 import com.blog.vo.UserVO;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
@@ -37,11 +43,17 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final CaptchaService captchaService;
     private final OssUtil ossUtil;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
 
     private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
     private static final Set<String> AVATAR_ALLOWED_EXTENSIONS = Set.of(".jpg", ".jpeg", ".png", ".gif", ".webp");
     private static final long MAX_AVATAR_SIZE = 5 * 1024 * 1024;
     private static final int MAX_PAGE_SIZE = 100;
+    
+    /** 用户信息缓存 Key 前缀 */
+    private static final String CACHE_KEY_PREFIX = "cache:user:profile:";
+    private static final Duration CACHE_TTL = Duration.ofMinutes(15);
 
     @Override
     public LoginVO register(RegisterDTO dto) {
@@ -104,11 +116,33 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public UserVO getProfile(Long userId) {
+        // 尝试从缓存获取
+        String cacheKey = CACHE_KEY_PREFIX + userId;
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            try {
+                return objectMapper.readValue(cached, UserVO.class);
+            } catch (JsonProcessingException e) {
+                log.warn("反序列化用户缓存失败: userId={}", userId, e);
+            }
+        }
+        
+        // 从数据库查询
         User user = userMapper.findById(userId);
         if (user == null) {
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
-        return toUserVO(user);
+        UserVO result = toUserVO(user);
+        
+        // 写入缓存
+        try {
+            String json = objectMapper.writeValueAsString(result);
+            redisTemplate.opsForValue().set(cacheKey, json, CACHE_TTL);
+        } catch (JsonProcessingException e) {
+            log.warn("序列化用户缓存失败: userId={}", userId, e);
+        }
+        
+        return result;
     }
 
     @Override
@@ -125,6 +159,10 @@ public class UserServiceImpl implements UserService {
         updateParam.setEmail(dto.getEmail());
         updateParam.setBio(dto.getBio());
         userMapper.updateProfileSelective(updateParam);
+        
+        // 清除用户缓存
+        clearUserCache(userId);
+        
         return getProfile(userId);
     }
 
@@ -157,6 +195,10 @@ public class UserServiceImpl implements UserService {
         updateParam.setId(userId);
         updateParam.setAvatar(avatarUrl);
         userMapper.updateProfileSelective(updateParam);
+        
+        // 清除用户缓存
+        clearUserCache(userId);
+        
         return avatarUrl;
     }
 
@@ -239,5 +281,14 @@ public class UserServiceImpl implements UserService {
         UserVO vo = new UserVO();
         BeanUtils.copyProperties(user, vo);
         return vo;
+    }
+    
+    /**
+     * 清除用户缓存
+     */
+    private void clearUserCache(Long userId) {
+        String cacheKey = CACHE_KEY_PREFIX + userId;
+        redisTemplate.delete(cacheKey);
+        log.debug("用户缓存已清除: userId={}", userId);
     }
 }

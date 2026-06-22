@@ -9,9 +9,9 @@ import com.blog.dto.AiSuggestDTO;
 import com.blog.service.AiService;
 import com.blog.util.RateLimitUtil;
 import cn.dev33.satoken.stp.StpUtil;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -19,19 +19,26 @@ import reactor.core.publisher.Flux;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AiServiceImpl implements AiService {
 
     private final ChatClient chatClient;
     private final StringRedisTemplate redisTemplate;
     private final RateLimitUtil rateLimitUtil;
+    private final Executor aiExecutor;
+
+    public AiServiceImpl(ChatClient chatClient,
+                         StringRedisTemplate redisTemplate,
+                         RateLimitUtil rateLimitUtil,
+                         @Qualifier("aiExecutor") Executor aiExecutor) {
+        this.chatClient = chatClient;
+        this.redisTemplate = redisTemplate;
+        this.rateLimitUtil = rateLimitUtil;
+        this.aiExecutor = aiExecutor;
+    }
 
     private static final String AI_SESSION_PREFIX = "ai:session:";
     private static final String AI_RATE_PREFIX = "rate:ai:";
@@ -82,21 +89,10 @@ public class AiServiceImpl implements AiService {
                 styleDesc
         );
 
-        try {
-            return CompletableFuture.supplyAsync(() ->
-                    chatClient.prompt()
-                            .user(prompt)
-                            .call()
-                            .content()
-            ).orTimeout(AI_CALL_TIMEOUT.toSeconds(), TimeUnit.SECONDS).join();
-        } catch (CompletionException e) {
-            if (e.getCause() instanceof TimeoutException) {
-                log.error("AI 生成文章超时");
-                throw new BusinessException(ResultCode.AI_REQUEST_FAILED);
-            }
-            log.error("AI 生成文章失败", e);
-            throw new BusinessException(ResultCode.AI_REQUEST_FAILED);
-        }
+        return executeAiCall(() -> chatClient.prompt()
+                .user(prompt)
+                .call()
+                .content(), "生成文章");
     }
 
     @Override
@@ -120,21 +116,10 @@ public class AiServiceImpl implements AiService {
                 %s
                 """, instruction, dto.getContent());
 
-        try {
-            return CompletableFuture.supplyAsync(() ->
-                    chatClient.prompt()
-                            .user(prompt)
-                            .call()
-                            .content()
-            ).orTimeout(AI_CALL_TIMEOUT.toSeconds(), TimeUnit.SECONDS).join();
-        } catch (CompletionException e) {
-            if (e.getCause() instanceof TimeoutException) {
-                log.error("AI 润色超时");
-                throw new BusinessException(ResultCode.AI_REQUEST_FAILED);
-            }
-            log.error("AI 润色失败", e);
-            throw new BusinessException(ResultCode.AI_REQUEST_FAILED);
-        }
+        return executeAiCall(() -> chatClient.prompt()
+                .user(prompt)
+                .call()
+                .content(), "润色文章");
     }
 
     @Override
@@ -162,21 +147,10 @@ public class AiServiceImpl implements AiService {
                 dto.getContent() != null ? "内容摘要：" + dto.getContent().substring(0, Math.min(500, dto.getContent().length())) : ""
         );
 
-        try {
-            return CompletableFuture.supplyAsync(() ->
-                    chatClient.prompt()
-                            .user(prompt)
-                            .call()
-                            .content()
-            ).orTimeout(AI_CALL_TIMEOUT.toSeconds(), TimeUnit.SECONDS).join();
-        } catch (CompletionException e) {
-            if (e.getCause() instanceof TimeoutException) {
-                log.error("AI 建议生成超时");
-                throw new BusinessException(ResultCode.AI_REQUEST_FAILED);
-            }
-            log.error("AI 建议生成失败", e);
-            throw new BusinessException(ResultCode.AI_REQUEST_FAILED);
-        }
+        return executeAiCall(() -> chatClient.prompt()
+                .user(prompt)
+                .call()
+                .content(), "建议生成");
     }
 
     @Override
@@ -240,6 +214,33 @@ public class AiServiceImpl implements AiService {
                     redisTemplate.expire(redisKey, SESSION_TTL);
                 })
                 .doOnError(e -> log.error("AI 对话流式输出异常", e));
+    }
+
+    /**
+     * 执行 AI 调用的通用方法
+     *
+     * @param aiCall    AI 调用逻辑
+     * @param operation 操作名称，用于日志记录
+     * @return AI 返回的内容
+     * @throws BusinessException 当调用超时或失败时抛出
+     */
+    private String executeAiCall(Callable<String> aiCall, String operation) {
+        try {
+            return CompletableFuture.supplyAsync(() -> {
+                try {
+                    return aiCall.call();
+                } catch (Exception e) {
+                    throw new CompletionException(e);
+                }
+            }, aiExecutor).orTimeout(AI_CALL_TIMEOUT.toSeconds(), TimeUnit.SECONDS).join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof TimeoutException) {
+                log.error("AI {}超时", operation);
+                throw new BusinessException(ResultCode.AI_REQUEST_FAILED);
+            }
+            log.error("AI {}失败", operation, e);
+            throw new BusinessException(ResultCode.AI_REQUEST_FAILED);
+        }
     }
 
     private void checkAiRateLimit() {
