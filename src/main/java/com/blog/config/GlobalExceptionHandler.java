@@ -9,6 +9,7 @@ import com.blog.common.ResultCode;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.FieldError;
@@ -70,6 +71,13 @@ public class GlobalExceptionHandler {
     public Result<Void> handleNoResource(NoResourceFoundException e) {
         // 静态资源不存在（favicon.ico 等）不打印错误日志
         return Result.fail(404, "资源不存在");
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        log.warn("文件上传大小超限: {}", e.getMessage());
+        return Result.fail(400, "上传文件大小超过限制");
     }
 
     @ExceptionHandler(Exception.class)

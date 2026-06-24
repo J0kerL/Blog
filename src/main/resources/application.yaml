@@ -7,7 +7,18 @@ spring:
   application:
     name: blog-backend
   profiles:
-    active: dev   # 默认激活 dev，部署时改为 prod
+    active: prod   # 默认激活 dev，部署时改为 prod
+
+  # ==================== 文件上传配置 ====================
+  servlet:
+    multipart:
+      # 单个文件最大大小
+      max-file-size: 10MB
+      # 请求总大小最大值
+      max-request-size: 20MB
+      enabled: true
+      # 文件写入磁盘的阈值
+      file-size-threshold: 2KB
 
   # ==================== Spring AI 配置 (MiMo OpenAI 兼容) ====================
   ai:
