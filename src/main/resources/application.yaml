@@ -7,7 +7,7 @@ spring:
   application:
     name: blog-backend
   profiles:
-    active: prod   # 默认激活 dev，部署时改为 prod
+    active: dev   # 默认激活 dev，部署时改为 prod
 
   # ==================== 文件上传配置 ====================
   servlet:
