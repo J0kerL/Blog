@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.blog.common.Result;
 import com.blog.dto.ChangePasswordDTO;
 import com.blog.dto.UserUpdateDTO;
+import com.blog.service.FileService;
 import com.blog.service.UserService;
 import com.blog.vo.UserVO;
 import io.swagger.v3.oas.annotations.Operation;
@@ -20,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class UserController {
 
     private final UserService userService;
+    private final FileService fileService;
 
     @Operation(summary = "获取个人信息")
     @GetMapping("/profile")
@@ -40,6 +42,12 @@ public class UserController {
     public Result<String> uploadAvatar(@RequestParam("file") MultipartFile file) {
         Long userId = StpUtil.getLoginIdAsLong();
         return Result.ok(userService.uploadAvatar(userId, file));
+    }
+
+    @Operation(summary = "上传图片", description = "通用图片上传接口，返回图片 URL")
+    @PostMapping("/upload")
+    public Result<String> upload(@RequestParam("file") MultipartFile file) {
+        return Result.ok(fileService.upload(file));
     }
 
     @Operation(summary = "修改密码")
